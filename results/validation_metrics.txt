@@ -1,0 +1,7 @@
+Validation PSNR and Efficiency metrics (target vs. capture at zero offset)
+band_1_psnr: 23.27 dB
+band_1_efficiency: 0.34%
+band_2_psnr: 9.70 dB
+band_2_efficiency: 23.55%
+band_3_psnr: 9.95 dB
+band_3_efficiency: 17.42%
