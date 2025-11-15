@@ -1,15 +1,3 @@
-
-
-"""
-Multi-Plane Multi-Band Diffractive Projection (with validation renders)
-------------------------------------------------------------------------
-This notebook designs a single diffractive phase element that projects different
-target images at different planes/wavelengths. It now includes validation
-visualizations: synthetic camera captures near the target planes, RGB composite
-render, and PSNR/er
-/- intensity_evolution_band*.gif
-"""
-
 import os
 import numpy as np
 import torch
@@ -31,9 +19,9 @@ print(f'Using device: {device}')
 def to_np(x):
     return x.detach().cpu().numpy()
 
-# ----------------------------
+
 # Parameters
-# ----------------------------
+
 N = 128                 # grid size
 L = 4e-3                # physical aperture (4 mm)
 dx = L / N
@@ -42,16 +30,12 @@ planes = [8e-3, 10e-3, 12e-3]           # target planes for each band (m), must 
 reg_weight = 0.01       # Total variation regularization weight
 n_material = 1.5        # Refractive index for height map computation (e.g., glass)
 
-# ----------------------------
 # Coordinate grids
-# ----------------------------
 x = torch.linspace(-L/2, L/2, N, device=device)
 X, Y = torch.meshgrid(x, x, indexing='xy')
 R2 = X**2 + Y**2
 
-# ----------------------------
 # Angular spectrum transfer functions (precompute per lambda and plane)
-# ----------------------------
 fx = torch.fft.fftfreq(N, d=dx, device=device)
 FX, FY = torch.meshgrid(fx, fx, indexing='ij')
 
@@ -64,9 +48,8 @@ for wl in wavelengths:
         H = torch.exp(1j * k * z * torch.sqrt(term))
         transfer[wl][z] = H.to(device)
 
-# ----------------------------
 # Target images (grayscale) - Now load from files or generate
-# ----------------------------
+
 def load_or_generate_target(filename, N, default_gen_func, *args):
     if os.path.exists(filename):
         img = Image.open(filename).convert('L')
@@ -76,8 +59,6 @@ def load_or_generate_target(filename, N, default_gen_func, *args):
         arr = default_gen_func(N, *args)
     return arr
 
-# Note: Text rendering requires specific font files to be available in the environment.
-# If font loading fails, a simple square is generated as a fallback.
 def make_text(N, text='U', fontsize=96):
     try:
         img = Image.new('L', (N, N), color=0)
@@ -96,7 +77,7 @@ def make_text(N, text='U', fontsize=96):
         return arr
     except IOError:
         print("Warning: Could not load font for text rendering. Generating a square instead.")
-        # Fallback: Generate a simple square if font loading fails
+    
         img = np.zeros((N,N), dtype=np.float32)
         square_size = N // 2
         start = (N - square_size) // 2
@@ -121,9 +102,7 @@ targets = [load_or_generate_target(f, N, gen[0], *gen[1:]) for f, gen in zip(tar
 for i, t in enumerate(targets):
     plt.imsave(f'results/target_{i+1}.png', t, cmap='gray')
 
-# ----------------------------
 # Phase mask parameterization
-# ----------------------------
 phase = torch.nn.Parameter(2 * np.pi * torch.rand((N,N), device=device))
 optimizer = torch.optim.Adam([phase], lr=0.1)
 scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=20)
@@ -131,9 +110,7 @@ scheduler = ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=20)
 # Input field: uniform amplitude
 E0 = torch.ones((N,N), dtype=torch.complex64, device=device)
 
-# ----------------------------
 # Forward and loss
-# ----------------------------
 def propagate(Ein, H):
     return torch.fft.ifft2(torch.fft.fft2(Ein) * H)
 
@@ -150,9 +127,7 @@ def total_variation(phase):
     dy = torch.mean(torch.abs(phase[:, 1:] - phase[:, :-1]))
     return dx + dy
 
-# ----------------------------
 # Optimization loop
-# ----------------------------
 steps = 500  # Increased steps
 loss_history = []
 phase_frames = []
@@ -182,9 +157,8 @@ for step in tqdm(range(steps)):
             I = plane_intensity_for_phase(phase, wl, z)
             intensity_frames[i].append(to_np(I))
 
-# ----------------------------
 # Save final phase and loss
-# ----------------------------
+
 final_phase = to_np(phase)
 np.save('results/final_phase_multiplane.npy', final_phase)
 
@@ -205,9 +179,7 @@ plt.grid(True)
 plt.savefig('results/loss_multiplane.png', dpi=300)
 plt.close()
 
-# ----------------------------
 # Render intensity maps for each wavelength/plane (final)
-# ----------------------------
 for i, wl in enumerate(wavelengths):
     z = planes[i]
     I = plane_intensity_for_phase(phase, wl, z)
@@ -219,9 +191,8 @@ for i, wl in enumerate(wavelengths):
     plt.savefig(f'results/final_intensity_{i+1}.png', dpi=300)
     plt.close()
 
-# ----------------------------
 # Animation of phase evolution
-# ----------------------------
+
 fig, ax = plt.subplots(figsize=(6,5))
 ims = []
 for fr in phase_frames:
@@ -231,9 +202,8 @@ ani = animation.ArtistAnimation(fig, ims, interval=200, blit=True)
 ani.save('results/phase_evolution_multiplane.gif', writer='pillow', fps=5)
 plt.close()
 
-# ----------------------------
 # Animation of intensity evolution per band
-# ----------------------------
+
 for i in range(len(wavelengths)):
     fig, ax = plt.subplots(figsize=(6,5))
     ims = []
@@ -244,9 +214,7 @@ for i in range(len(wavelengths)):
     ani.save(f'results/intensity_evolution_band{i+1}.gif', writer='pillow', fps=5)
     plt.close()
 
-# ----------------------------
 # Compute height map for fabrication (phase / (k0 * (n-1)))
-# ----------------------------
 # Use central wavelength for reference
 wl_ref = wavelengths[len(wavelengths)//2]
 height = (final_phase % (2*np.pi)) / (2*np.pi / wl_ref * (n_material - 1))
@@ -258,9 +226,7 @@ plt.tight_layout()
 plt.savefig('results/height_map.png', dpi=300)
 plt.close()
 
-# ----------------------------
 # Validation visualizations
-# ----------------------------
 # 1) synthetic camera captures: propagate to small offsets around each target plane
 offsets = [-0.5e-3, 0.0, 0.5e-3]  # offsets in meters relative to each plane
 validation_captures = []
